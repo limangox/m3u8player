@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#090b10">
   <title>STREAMBOX</title>
   <meta name="description" content="适用于电脑、平板和手机的 HLS 直播与点播播放器">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <main class="page" id="page">
@@ -14,33 +14,63 @@
       <div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span><span>STREAMBOX</span></div>
       <div class="header-status"><span class="status-dot" id="status-dot"></span><span id="mode-label">READY</span></div>
     </header>
+
     <section class="source-panel">
       <form id="source-form">
         <label for="stream-url">M3U8 播放地址</label>
-        <div class="url-row"><input id="stream-url" type="url" inputmode="url" placeholder="https://example.com/live/master.m3u8" autocapitalize="none" autocomplete="off" spellcheck="false" required><button class="primary" type="submit">加载播放</button><button class="secondary" id="share" type="button" disabled>复制分享链接</button></div>
+        <div class="url-row">
+          <input id="stream-url" type="url" inputmode="url" placeholder="https://example.com/live/master.m3u8" autocapitalize="none" autocomplete="off" spellcheck="false" required>
+          <button class="primary" type="submit">加载播放</button>
+          <button class="secondary" id="share" type="button" disabled>复制分享链接</button>
+        </div>
       </form>
     </section>
-    <section class="player-shell">
+
+    <section class="player-shell controls-visible" id="player-shell">
       <div class="video-wrap">
         <video id="video" playsinline preload="metadata" aria-label="HLS 视频播放器"></video>
+        <div class="loading-spinner" id="loading" aria-label="正在加载" hidden></div>
+        <button class="center-play" id="center-play" type="button" aria-label="播放" hidden>▶</button>
         <div class="error-overlay" id="error" hidden></div>
-      </div>
-      <div class="control-strip">
-        <div class="now-playing"><span class="pulse" id="pulse"></span><div><small>当前状态</small><strong id="status">输入 M3U8 地址即可开始播放</strong></div></div>
-        <div class="selectors">
-          <button class="live-button" id="go-live" hidden>回到直播</button>
-          <label><span>清晰度</span><select id="quality" disabled><option value="-1">自动</option></select></label>
-          <label><span>倍速</span><select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
-          <button class="icon-button" id="theater">影院模式</button>
+
+        <div class="custom-controls" id="custom-controls" hidden>
+          <div class="progress-wrap" id="progress-wrap">
+            <input class="progress" id="progress" type="range" min="0" max="1" step="0.05" value="0" aria-label="播放进度">
+          </div>
+          <div class="control-row">
+            <button class="player-button play-toggle" id="play-toggle" type="button" aria-label="播放">▶</button>
+            <div class="volume-control">
+              <button class="player-button" id="mute" type="button" aria-label="静音">🔊</button>
+              <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="音量">
+            </div>
+            <span class="time-label" id="time-label">00:00 / 00:00</span>
+            <span class="controls-spacer"></span>
+            <button class="live-pill" id="go-live" type="button" hidden><i></i> LIVE</button>
+            <label class="player-select-label"><span>清晰度</span><select id="quality" aria-label="清晰度" disabled><option value="-1">自动</option></select></label>
+            <label class="player-select-label speed-select"><span>速度</span><select id="speed" aria-label="播放速度"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+            <button class="player-button secondary-control" id="pip" type="button" aria-label="画中画" title="画中画">▣</button>
+            <button class="mode-button" id="web-fullscreen" type="button" aria-label="网页全屏">网页全屏</button>
+            <button class="mode-button" id="fullscreen" type="button" aria-label="全屏">全屏</button>
+          </div>
         </div>
       </div>
     </section>
+
     <section class="stats-panel">
-      <div class="stats" aria-label="播放统计"><div><span>估算带宽</span><strong id="bandwidth">—</strong></div><div><span>缓冲时长</span><strong id="buffer">—</strong></div><div><span>直播延迟</span><strong id="latency">—</strong></div><div><span>播放类型</span><strong id="type">—</strong></div></div>
+      <div class="stats" aria-label="播放统计">
+        <div><span>估算带宽</span><strong id="bandwidth">—</strong></div>
+        <div><span>缓冲时长</span><strong id="buffer">—</strong></div>
+        <div><span>直播延迟</span><strong id="latency">—</strong></div>
+        <div><span>播放类型</span><strong id="type">—</strong></div>
+      </div>
     </section>
-    <footer><p>快捷键：空格 播放/暂停 · ← → 快退/快进 5 秒 · M 静音 · F 全屏</p><p>提示：视频服务器必须允许跨域访问；HTTPS 页面不能加载 HTTP 视频源。</p></footer>
+
+    <footer>
+      <p>快捷键：空格 播放/暂停 · ← → 快退/快进 5 秒 · M 静音 · F 全屏</p>
+      <p>提示：视频服务器必须允许跨域访问；HTTPS 页面不能加载 HTTP 视频源。</p>
+    </footer>
   </main>
-  <script src="vendor/hls.min.js"></script>
-  <script src="app.js"></script>
+  <script src="vendor/hls.min.js?v=3"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
