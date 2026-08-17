@@ -8,7 +8,10 @@
   const input = $("stream-url");
   const statusDot = $("status-dot");
   const modeLabel = $("mode-label");
-  const quality = $("quality");
+  const qualityTrigger = $("quality-trigger");
+  const qualityMenu = $("quality-menu");
+  const speedTrigger = $("speed-trigger");
+  const speedMenu = $("speed-menu");
   const progress = $("progress");
   const progressWrap = $("progress-wrap");
   const timeLabel = $("time-label");
@@ -26,6 +29,7 @@
   let mode = "idle";
   let hideControlsTimer = 0;
   let webFullscreen = false;
+  let qualityValue = "-1";
 
   function formatRate(bits) {
     if (!bits || !Number.isFinite(bits)) return "—";
@@ -98,17 +102,88 @@
     });
   }
 
+  function closeMenus(except) {
+    [[qualityTrigger, qualityMenu], [speedTrigger, speedMenu]].forEach(([trigger, menu]) => {
+      if (menu === except) return;
+      menu.hidden = true;
+      trigger.classList.remove("active");
+      trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function toggleMenu(trigger, menu) {
+    const willOpen = menu.hidden;
+    closeMenus(menu);
+    menu.hidden = !willOpen;
+    trigger.classList.toggle("active", willOpen);
+    trigger.setAttribute("aria-expanded", String(willOpen));
+  }
+
+  function makeMenuItem(value, label, selected, onSelect) {
+    const button = document.createElement("button");
+    button.className = selected ? "menu-item selected" : "menu-item";
+    button.type = "button";
+    button.setAttribute("role", "menuitemradio");
+    button.setAttribute("aria-checked", String(selected));
+    button.dataset.value = value;
+    const text = document.createElement("span");
+    text.textContent = label;
+    const check = document.createElement("span");
+    check.className = "menu-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
+    button.append(text, check);
+    button.addEventListener("click", () => onSelect(value, label));
+    return button;
+  }
+
+  function selectQuality(value, label) {
+    qualityValue = value;
+    qualityTrigger.firstChild.textContent = label;
+    qualityMenu.querySelectorAll(".menu-item").forEach((item) => {
+      const selected = item.dataset.value === value;
+      item.classList.toggle("selected", selected);
+      item.setAttribute("aria-checked", String(selected));
+    });
+    if (hls && Number(value) >= -1) hls.currentLevel = Number(value);
+    closeMenus();
+  }
+
   function fillQualities(levels) {
-    quality.innerHTML = '<option value="-1">自动</option>';
+    const availableValues = levels.map((_, index) => String(index));
+    if (qualityValue !== "-1" && !availableValues.includes(qualityValue)) qualityValue = "-1";
+    qualityMenu.replaceChildren();
+    qualityMenu.append(makeMenuItem("-1", "自动", qualityValue === "-1", selectQuality));
     levels.forEach((level, index) => {
-      const option = document.createElement("option");
-      option.value = String(index);
       const resolution = level.height ? `${level.height}p` : `线路 ${index + 1}`;
       const fps = level.frameRate > 30 ? ` ${Math.round(level.frameRate)}fps` : "";
-      option.textContent = `${resolution}${fps}`;
-      quality.append(option);
+      qualityMenu.append(makeMenuItem(String(index), `${resolution}${fps}`, qualityValue === String(index), selectQuality));
     });
-    quality.disabled = levels.length < 2;
+    const selected = qualityMenu.querySelector(`[data-value="${qualityValue}"] span`);
+    qualityTrigger.firstChild.textContent = selected?.textContent || "自动";
+    qualityTrigger.disabled = levels.length === 0;
+  }
+
+  function revealDetectedResolution() {
+    if (!video.videoHeight || qualityMenu.querySelectorAll(".menu-item").length > 1) return;
+    qualityMenu.append(makeMenuItem("-2", `${video.videoHeight}p（当前源）`, false, selectQuality));
+    qualityTrigger.disabled = false;
+  }
+
+  function buildSpeedMenu() {
+    speedMenu.replaceChildren();
+    ["0.5", "0.75", "1", "1.25", "1.5", "2"].forEach((value) => {
+      speedMenu.append(makeMenuItem(value, `${value}×`, value === "1", (next, label) => {
+        video.playbackRate = Number(next);
+        speedTrigger.firstChild.textContent = label;
+        speedMenu.querySelectorAll(".menu-item").forEach((item) => {
+          const selected = item.dataset.value === next;
+          item.classList.toggle("selected", selected);
+          item.setAttribute("aria-checked", String(selected));
+        });
+        closeMenus();
+      }));
+    });
   }
 
   function load(source, autoplay = true) {
@@ -125,8 +200,8 @@
     customControls.hidden = false;
     centerPlay.hidden = true;
     errorBox.hidden = true;
+    qualityValue = "-1";
     fillQualities([]);
-    localStorage.setItem("m3u8-player:last-url", clean);
     setMode("loading", "正在读取播放列表…");
     revealControls();
 
@@ -164,11 +239,26 @@
       fillQualities(hls.levels);
       tryPlay(autoplay);
     });
+    hls.on(Hls.Events.LEVELS_UPDATED, () => fillQualities(hls.levels));
     hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
       setMode(data.details.live ? "live" : "vod");
     });
     hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
-      quality.value = hls.autoLevelEnabled ? "-1" : String(data.level);
+      if (hls.autoLevelEnabled) {
+        qualityValue = "-1";
+        qualityTrigger.firstChild.textContent = "自动";
+      } else {
+        const item = qualityMenu.querySelector(`[data-value="${data.level}"]`);
+        if (item) {
+          qualityValue = String(data.level);
+          qualityTrigger.firstChild.textContent = item.querySelector("span").textContent;
+        }
+      }
+      qualityMenu.querySelectorAll(".menu-item").forEach((item) => {
+        const selected = item.dataset.value === qualityValue;
+        item.classList.toggle("selected", selected);
+        item.setAttribute("aria-checked", String(selected));
+      });
     });
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (!data.fatal) return;
@@ -185,7 +275,8 @@
 
   function togglePlay() {
     if (!activeUrl) return;
-    video.paused ? video.play() : video.pause();
+    if (video.paused) video.play();
+    else video.pause();
     revealControls();
   }
 
@@ -232,6 +323,8 @@
   video.addEventListener("dblclick", toggleFullscreen);
   video.addEventListener("play", () => { syncPlayUi(); revealControls(); });
   video.addEventListener("pause", () => { syncPlayUi(); revealControls(); });
+  video.addEventListener("loadedmetadata", revealDetectedResolution);
+  video.addEventListener("resize", revealDetectedResolution);
   video.addEventListener("timeupdate", () => {
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
     progress.max = String(duration || 1);
@@ -244,11 +337,10 @@
   progress.addEventListener("input", () => {
     if (mode !== "live") video.currentTime = Number(progress.value);
   });
-  quality.addEventListener("change", () => {
-    if (hls) hls.currentLevel = Number(quality.value);
-  });
-  $("speed").addEventListener("change", (event) => {
-    video.playbackRate = Number(event.target.value);
+  qualityTrigger.addEventListener("click", () => toggleMenu(qualityTrigger, qualityMenu));
+  speedTrigger.addEventListener("click", () => toggleMenu(speedTrigger, speedMenu));
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".control-menu")) closeMenus();
   });
   $("mute").addEventListener("click", () => {
     video.muted = !video.muted;
@@ -323,10 +415,20 @@
   }, 1000);
 
   window.addEventListener("beforeunload", destroy);
+  buildSpeedMenu();
+  localStorage.removeItem("m3u8-player:last-url");
   const params = new URLSearchParams(location.search);
   const customTitle = params.get("title");
   if (customTitle) document.title = `${customTitle.slice(0,80)} · STREAMBOX`;
   video.muted = params.get("muted") === "1";
-  const initialUrl = params.get("url") || localStorage.getItem("m3u8-player:last-url");
-  if (initialUrl) load(initialUrl, params.get("autoplay") === "1");
+  const initialUrl = params.get("url");
+  const initialAutoplay = params.get("autoplay") === "1";
+  if (initialUrl) {
+    params.delete("url");
+    params.delete("autoplay");
+    params.delete("muted");
+    const query = params.toString();
+    history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+  }
+  if (initialUrl) load(initialUrl, initialAutoplay);
 })();

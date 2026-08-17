@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#090b10">
   <title>STREAMBOX</title>
   <meta name="description" content="适用于电脑、平板和手机的 HLS 直播与点播播放器">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <main class="page" id="page">
@@ -46,8 +46,14 @@
             <span class="time-label" id="time-label">00:00 / 00:00</span>
             <span class="controls-spacer"></span>
             <button class="live-pill" id="go-live" type="button" hidden><i></i> LIVE</button>
-            <label class="player-select-label"><span>清晰度</span><select id="quality" aria-label="清晰度" disabled><option value="-1">自动</option></select></label>
-            <label class="player-select-label speed-select"><span>速度</span><select id="speed" aria-label="播放速度"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+            <div class="control-menu" id="quality-control">
+              <button class="menu-trigger" id="quality-trigger" type="button" aria-label="清晰度" aria-haspopup="menu" aria-expanded="false" disabled>自动<span class="menu-chevron" aria-hidden="true">⌃</span></button>
+              <div class="glass-menu" id="quality-menu" role="menu" aria-label="清晰度" hidden></div>
+            </div>
+            <div class="control-menu speed-menu" id="speed-control">
+              <button class="menu-trigger" id="speed-trigger" type="button" aria-label="播放速度" aria-haspopup="menu" aria-expanded="false">1×<span class="menu-chevron" aria-hidden="true">⌃</span></button>
+              <div class="glass-menu" id="speed-menu" role="menu" aria-label="播放速度" hidden></div>
+            </div>
             <button class="player-button secondary-control" id="pip" type="button" aria-label="画中画" title="画中画">▣</button>
             <button class="mode-button" id="web-fullscreen" type="button" aria-label="网页全屏">网页全屏</button>
             <button class="mode-button" id="fullscreen" type="button" aria-label="全屏">全屏</button>
@@ -70,7 +76,7 @@
       <p>提示：视频服务器必须允许跨域访问；HTTPS 页面不能加载 HTTP 视频源。</p>
     </footer>
   </main>
-  <script src="vendor/hls.min.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="vendor/hls.min.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
