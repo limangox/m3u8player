@@ -30,6 +30,10 @@
   let hideControlsTimer = 0;
   let webFullscreen = false;
   let qualityValue = "-1";
+  let masterUrl = "";
+  let parsedQualities = [];
+  let forcedVariant = false;
+  let manifestAbort = null;
 
   function formatRate(bits) {
     if (!bits || !Number.isFinite(bits)) return "—";
@@ -47,6 +51,70 @@
     return hours
       ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
       : `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  function shouldUseNativeHls() {
+    if (!video.canPlayType("application/vnd.apple.mpegurl")) return false;
+    const userAgent = navigator.userAgent;
+    const appleMobile = /iPad|iPhone|iPod/i.test(userAgent)
+      || (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
+    const safari = /Safari/i.test(userAgent)
+      && !/Chrome|Chromium|CriOS|Edg|EdgiOS|OPR|Firefox|FxiOS/i.test(userAgent);
+    const hlsJsSupported = Boolean(window.Hls && Hls.isSupported());
+    return appleMobile || safari || !hlsJsSupported;
+  }
+
+  function parseAttributes(line) {
+    const attributes = {};
+    const expression = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+    let match;
+    while ((match = expression.exec(line))) {
+      attributes[match[1].toUpperCase()] = match[2].replace(/^"|"$/g, "");
+    }
+    return attributes;
+  }
+
+  function parseMasterPlaylist(text, sourceUrl) {
+    const lines = text.split(/\r?\n/).map((line) => line.trim());
+    const variants = [];
+    lines.forEach((line, lineIndex) => {
+      if (!line.startsWith("#EXT-X-STREAM-INF:")) return;
+      const attributes = parseAttributes(line.slice(line.indexOf(":") + 1));
+      const uri = lines.slice(lineIndex + 1).find((entry) => entry && !entry.startsWith("#"));
+      if (!uri) return;
+      const [width = 0, height = 0] = (attributes.RESOLUTION || "0x0")
+        .split("x").map((value) => Number(value) || 0);
+      variants.push({
+        index: variants.length,
+        url: new URL(uri, sourceUrl).href,
+        width,
+        height,
+        bandwidth: Number(attributes.AVERAGE_BANDWIDTH || attributes.BANDWIDTH) || 0,
+        frameRate: Number(attributes["FRAME-RATE"]) || 0
+      });
+    });
+    return variants;
+  }
+
+  function qualityLabel(level, index) {
+    const resolution = level.height ? `${level.height}p` : `线路 ${index + 1}`;
+    const fps = level.frameRate > 30 ? ` ${Math.round(level.frameRate)}fps` : "";
+    const bits = level.bandwidth || level.bitrate || 0;
+    const bitrate = bits >= 1000000
+      ? ` · ${(bits / 1000000).toFixed(bits % 1000000 ? 1 : 0)} Mbps`
+      : bits ? ` · ${Math.round(bits / 1000)} Kbps` : "";
+    return `${resolution}${fps}${bitrate}`;
+  }
+
+  function normalizeQualities(levels) {
+    return levels.map((level, position) => ({
+      ...level,
+      index: Number.isInteger(level.index) ? level.index : position,
+      label: qualityLabel(level, position)
+    })).sort((left, right) =>
+      (right.height || 0) - (left.height || 0)
+      || (right.bandwidth || right.bitrate || 0) - (left.bandwidth || left.bitrate || 0)
+    );
   }
 
   function setMode(next, text) {
@@ -68,6 +136,8 @@
   }
 
   function destroy() {
+    if (manifestAbort) manifestAbort.abort();
+    manifestAbort = null;
     if (hls) hls.destroy();
     hls = null;
   }
@@ -145,23 +215,50 @@
       item.classList.toggle("selected", selected);
       item.setAttribute("aria-checked", String(selected));
     });
-    if (hls && Number(value) >= -1) hls.currentLevel = Number(value);
+    const selectedValue = Number(value);
+    const selected = parsedQualities.find((item) => item.index === selectedValue);
+    if (hls) {
+      if (selectedValue === -1) {
+        if (forcedVariant) {
+          forcedVariant = false;
+          hls.loadSource(masterUrl);
+        } else {
+          hls.currentLevel = -1;
+        }
+      } else if (!forcedVariant && selectedValue < hls.levels.length) {
+        hls.currentLevel = selectedValue;
+      } else if (selected?.url) {
+        forcedVariant = true;
+        hls.loadSource(selected.url);
+      }
+    } else {
+      const source = selectedValue === -1 ? masterUrl : selected?.url;
+      if (source) {
+        const wasPlaying = !video.paused;
+        const previousTime = video.currentTime;
+        const wasLive = mode === "live";
+        video.src = source;
+        video.addEventListener("loadedmetadata", () => {
+          if (!wasLive && Number.isFinite(previousTime)) video.currentTime = previousTime;
+          if (wasPlaying) video.play().catch(revealControls);
+        }, { once:true });
+      }
+    }
     closeMenus();
   }
 
   function fillQualities(levels) {
-    const availableValues = levels.map((_, index) => String(index));
+    const normalized = normalizeQualities(levels);
+    const availableValues = normalized.map((item) => String(item.index));
     if (qualityValue !== "-1" && !availableValues.includes(qualityValue)) qualityValue = "-1";
     qualityMenu.replaceChildren();
     qualityMenu.append(makeMenuItem("-1", "自动", qualityValue === "-1", selectQuality));
-    levels.forEach((level, index) => {
-      const resolution = level.height ? `${level.height}p` : `线路 ${index + 1}`;
-      const fps = level.frameRate > 30 ? ` ${Math.round(level.frameRate)}fps` : "";
-      qualityMenu.append(makeMenuItem(String(index), `${resolution}${fps}`, qualityValue === String(index), selectQuality));
+    normalized.forEach((level) => {
+      qualityMenu.append(makeMenuItem(String(level.index), level.label, qualityValue === String(level.index), selectQuality));
     });
     const selected = qualityMenu.querySelector(`[data-value="${qualityValue}"] span`);
     qualityTrigger.firstChild.textContent = selected?.textContent || "自动";
-    qualityTrigger.disabled = levels.length === 0;
+    qualityTrigger.disabled = normalized.length === 0;
   }
 
   function revealDetectedResolution() {
@@ -195,6 +292,9 @@
     video.removeAttribute("src");
     video.load();
     activeUrl = clean;
+    masterUrl = clean;
+    parsedQualities = [];
+    forcedVariant = false;
     input.value = clean;
     $("share").disabled = false;
     customControls.hidden = false;
@@ -205,7 +305,23 @@
     setMode("loading", "正在读取播放列表…");
     revealControls();
 
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    manifestAbort = new AbortController();
+    fetch(clean, { cache:"no-store", signal:manifestAbort.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((manifest) => {
+        parsedQualities = normalizeQualities(parseMasterPlaylist(manifest, clean));
+        if (parsedQualities.length > Math.max(0, qualityMenu.children.length - 1)) {
+          fillQualities(parsedQualities);
+        }
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") parsedQualities = [];
+      });
+
+    if (shouldUseNativeHls()) {
       video.src = clean;
       video.addEventListener("loadedmetadata", () => {
         setMode(Number.isFinite(video.duration) ? "vod" : "live");
@@ -236,10 +352,12 @@
     hls.attachMedia(video);
     hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(clean));
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      fillQualities(hls.levels);
+      fillQualities(parsedQualities.length > hls.levels.length ? parsedQualities : hls.levels);
       tryPlay(autoplay);
     });
-    hls.on(Hls.Events.LEVELS_UPDATED, () => fillQualities(hls.levels));
+    hls.on(Hls.Events.LEVELS_UPDATED, () => {
+      if (!forcedVariant) fillQualities(parsedQualities.length > hls.levels.length ? parsedQualities : hls.levels);
+    });
     hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
       setMode(data.details.live ? "live" : "vod");
     });
