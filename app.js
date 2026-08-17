@@ -9,11 +9,9 @@
   const quality = $("quality");
   const goLive = $("go-live");
   const errorBox = $("error");
-  const demo = $("demo");
   let hls = null;
   let activeUrl = "";
   let mode = "idle";
-  const demoUrl = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
 
   function formatRate(bits) {
     if (!bits || !Number.isFinite(bits)) return "—";
@@ -59,7 +57,7 @@
     video.load();
     activeUrl = clean;
     input.value = clean;
-    demo.hidden = true;
+    video.controls = true;
     $("share").disabled = false;
     errorBox.hidden = true;
     fillQualities([]);
@@ -90,19 +88,18 @@
   }
 
   $("source-form").addEventListener("submit", (event) => { event.preventDefault(); load(input.value, true); });
-  demo.addEventListener("click", () => load(demoUrl, true));
   quality.addEventListener("change", () => { if (hls) hls.currentLevel = Number(quality.value); });
   $("speed").addEventListener("change", (event) => { video.playbackRate = Number(event.target.value); });
   goLive.addEventListener("click", () => { if (hls && hls.liveSyncPosition != null) video.currentTime = hls.liveSyncPosition; else if (video.seekable.length) video.currentTime = video.seekable.end(video.seekable.length - 1); video.play(); });
   $("theater").addEventListener("click", (event) => { $("page").classList.toggle("theater"); event.target.textContent = $("page").classList.contains("theater") ? "退出影院" : "影院模式"; });
-  $("share").addEventListener("click", async () => { const link = new URL(location.href); link.search = ""; link.searchParams.set("url", activeUrl); link.searchParams.set("title", $("page-title").textContent); try { await navigator.clipboard.writeText(link); status.textContent = "带播放地址的分享链接已复制"; } catch { status.textContent = "复制失败，请手动复制浏览器地址"; } });
+  $("share").addEventListener("click", async () => { const link = new URL(location.href); link.search = ""; link.searchParams.set("url", activeUrl); try { await navigator.clipboard.writeText(link); status.textContent = "带播放地址的分享链接已复制"; } catch { status.textContent = "复制失败，请手动复制浏览器地址"; } });
   video.addEventListener("dblclick", () => video.requestFullscreen && video.requestFullscreen());
   window.addEventListener("keydown", (event) => { if (["INPUT","SELECT"].includes(event.target.tagName)) return; if (event.code === "Space") { event.preventDefault(); video.paused ? video.play() : video.pause(); } else if (event.key.toLowerCase() === "m") video.muted = !video.muted; else if (event.key === "ArrowLeft") video.currentTime = Math.max(0, video.currentTime - 5); else if (event.key === "ArrowRight") video.currentTime += 5; else if (event.key.toLowerCase() === "f" && video.requestFullscreen) video.requestFullscreen(); });
   setInterval(() => { const ranges = video.buffered; $("buffer").textContent = ranges.length ? `${Math.max(0, ranges.end(ranges.length - 1) - video.currentTime).toFixed(1)} s` : "—"; $("bandwidth").textContent = formatRate(hls ? hls.bandwidthEstimate : 0); $("latency").textContent = hls && Number.isFinite(hls.latency) ? `${hls.latency.toFixed(1)} s` : "—"; }, 1000);
   window.addEventListener("beforeunload", destroy);
   const params = new URLSearchParams(location.search);
   const customTitle = params.get("title");
-  if (customTitle) { $("page-title").textContent = customTitle.slice(0, 80); document.title = `${customTitle} · M3U8 播放器`; }
+  if (customTitle) document.title = `${customTitle.slice(0, 80)} · STREAMBOX`;
   video.muted = params.get("muted") === "1";
   const initialUrl = params.get("url") || localStorage.getItem("m3u8-player:last-url");
   if (initialUrl) load(initialUrl, params.get("autoplay") === "1");

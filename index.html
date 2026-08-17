@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#090b10">
-  <title>M3U8 自适应播放器</title>
+  <title>STREAMBOX</title>
   <meta name="description" content="适用于电脑、平板和手机的 HLS 直播与点播播放器">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,14 +14,15 @@
       <div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span><span>STREAMBOX</span></div>
       <div class="header-status"><span class="status-dot" id="status-dot"></span><span id="mode-label">READY</span></div>
     </header>
-    <section class="hero">
-      <div><p class="eyebrow">ADAPTIVE HLS PLAYER</p><h1 id="page-title">M3U8 播放器</h1><p class="subhead">一页兼容电脑、平板与手机。自动识别直播或点播，并根据网络状况切换清晰度。</p></div>
-      <div class="hero-chip">HLS.js · Native HLS</div>
+    <section class="source-panel">
+      <form id="source-form">
+        <label for="stream-url">M3U8 播放地址</label>
+        <div class="url-row"><input id="stream-url" type="url" inputmode="url" placeholder="https://example.com/live/master.m3u8" autocapitalize="none" autocomplete="off" spellcheck="false" required><button class="primary" type="submit">加载播放</button><button class="secondary" id="share" type="button" disabled>复制分享链接</button></div>
+      </form>
     </section>
     <section class="player-shell">
       <div class="video-wrap">
-        <video id="video" controls playsinline preload="metadata" aria-label="HLS 视频播放器"></video>
-        <button class="empty-state" id="demo" type="button"><span class="play-disc">▶</span><strong>还没有加载视频</strong><small>点击播放公开测试流</small></button>
+        <video id="video" playsinline preload="metadata" aria-label="HLS 视频播放器"></video>
         <div class="error-overlay" id="error" hidden></div>
       </div>
       <div class="control-strip">
@@ -34,11 +35,7 @@
         </div>
       </div>
     </section>
-    <section class="source-panel">
-      <form id="source-form">
-        <label for="stream-url">M3U8 播放地址</label>
-        <div class="url-row"><input id="stream-url" type="url" inputmode="url" placeholder="https://example.com/live/master.m3u8" autocapitalize="none" autocomplete="off" spellcheck="false" required><button class="primary" type="submit">加载播放</button><button class="secondary" id="share" type="button" disabled>复制分享链接</button></div>
-      </form>
+    <section class="stats-panel">
       <div class="stats" aria-label="播放统计"><div><span>估算带宽</span><strong id="bandwidth">—</strong></div><div><span>缓冲时长</span><strong id="buffer">—</strong></div><div><span>直播延迟</span><strong id="latency">—</strong></div><div><span>播放类型</span><strong id="type">—</strong></div></div>
     </section>
     <footer><p>快捷键：空格 播放/暂停 · ← → 快退/快进 5 秒 · M 静音 · F 全屏</p><p>提示：视频服务器必须允许跨域访问；HTTPS 页面不能加载 HTTP 视频源。</p></footer>
