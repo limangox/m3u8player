@@ -177,12 +177,13 @@
     window.clearTimeout(hideControlsTimer);
     player.classList.remove("controls-hidden");
     player.classList.add("controls-visible");
-    if (!video.paused) {
-      hideControlsTimer = window.setTimeout(() => {
-        player.classList.remove("controls-visible");
-        player.classList.add("controls-hidden");
-      }, 2600);
-    }
+    hideControlsTimer = window.setTimeout(hideControls, 2600);
+  }
+
+  function hideControls() {
+    window.clearTimeout(hideControlsTimer);
+    player.classList.remove("controls-visible");
+    player.classList.add("controls-hidden");
   }
 
   function syncPlayUi() {
@@ -199,7 +200,6 @@
     }
     video.play().catch(() => {
       syncPlayUi();
-      revealControls();
     });
   }
 
@@ -278,7 +278,7 @@
         video.src = source;
         video.addEventListener("loadedmetadata", () => {
           if (!wasLive && Number.isFinite(previousTime)) video.currentTime = previousTime;
-          if (wasPlaying) video.play().catch(revealControls);
+          if (wasPlaying) video.play().catch(() => {});
         }, { once:true });
       }
     }
@@ -444,7 +444,7 @@
     qualityValue = "-1";
     fillQualities([]);
     setMode("loading", "正在读取播放列表…");
-    revealControls();
+    hideControls();
 
     if (sourceKind === "dash") {
       loadDash(clean, clearKeys, autoplay);
@@ -541,7 +541,6 @@
     if (!activeUrl) return;
     if (video.paused) video.play();
     else video.pause();
-    revealControls();
   }
 
   function goLive() {
@@ -564,7 +563,6 @@
     webFullscreenButton.classList.toggle("active", webFullscreen);
     webFullscreenButton.textContent = webFullscreen ? "退出网页全屏" : "网页全屏";
     webFullscreenButton.setAttribute("aria-label", webFullscreen ? "退出网页全屏" : "网页全屏");
-    revealControls();
   }
 
   async function toggleFullscreen() {
@@ -596,8 +594,8 @@
   centerPlay.addEventListener("click", togglePlay);
   video.addEventListener("click", togglePlay);
   video.addEventListener("dblclick", toggleFullscreen);
-  video.addEventListener("play", () => { syncPlayUi(); revealControls(); });
-  video.addEventListener("pause", () => { syncPlayUi(); revealControls(); });
+  video.addEventListener("play", syncPlayUi);
+  video.addEventListener("pause", syncPlayUi);
   video.addEventListener("loadedmetadata", revealDetectedResolution);
   video.addEventListener("resize", revealDetectedResolution);
   video.addEventListener("timeupdate", () => {
@@ -643,15 +641,10 @@
     fullscreenButton.classList.toggle("active", active);
     fullscreenButton.textContent = active ? "退出全屏" : "全屏";
     fullscreenButton.setAttribute("aria-label", active ? "退出全屏" : "全屏");
-    revealControls();
   });
+  player.addEventListener("mouseenter", revealControls);
   player.addEventListener("mousemove", revealControls);
-  player.addEventListener("mouseleave", () => {
-    if (!video.paused) {
-      player.classList.remove("controls-visible");
-      player.classList.add("controls-hidden");
-    }
-  });
+  player.addEventListener("mouseleave", hideControls);
   player.addEventListener("touchstart", revealControls, { passive:true });
   customControls.addEventListener("click", (event) => event.stopPropagation());
   $("share").addEventListener("click", async () => {
@@ -677,7 +670,6 @@
     } else if (event.key.toLowerCase() === "f") {
       toggleFullscreen();
     }
-    revealControls();
   });
 
   window.setInterval(() => {
