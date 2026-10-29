@@ -6,6 +6,8 @@
   const player = $("player-shell");
   const video = $("video");
   const input = $("stream-url");
+  const clearKeyInput = $("clear-key");
+  const refererInput = $("referer");
   const statusDot = $("status-dot");
   const modeLabel = $("mode-label");
   const qualityTrigger = $("quality-trigger");
@@ -25,6 +27,7 @@
   const fullscreenButton = $("fullscreen");
 
   let hls = null;
+  let shakaPlayer = null;
   let activeUrl = "";
   let mode = "idle";
   let hideControlsTimer = 0;
@@ -34,6 +37,32 @@
   let parsedQualities = [];
   let forcedVariant = false;
   let manifestAbort = null;
+  let sourceKind = "hls";
+
+  function isDashUrl(source) {
+    try {
+      return new URL(source, location.href).pathname.toLowerCase().endsWith(".mpd");
+    } catch {
+      return /\.mpd(?:$|[?#])/i.test(source);
+    }
+  }
+
+  function parseClearKeys(raw) {
+    const clean = raw.trim().replace(/\s*:\s*/g, ":");
+    if (!clean) return {};
+    const result = {};
+    const entries = clean.split(/[\s,;]+/).filter(Boolean);
+    entries.forEach((entry) => {
+      const separator = entry.indexOf(":");
+      const kid = (separator > 0 ? entry.slice(0, separator) : "").replace(/-/g, "").toLowerCase();
+      const key = (separator > 0 ? entry.slice(separator + 1) : "").toLowerCase();
+      if (!/^[0-9a-f]{32}$/.test(kid) || !/^[0-9a-f]{32}$/.test(key)) {
+        throw new Error(`ClearKey 格式错误：${entry}`);
+      }
+      result[kid] = key;
+    });
+    return result;
+  }
 
   function formatRate(bits) {
     if (!bits || !Number.isFinite(bits)) return "—";
@@ -140,6 +169,8 @@
     manifestAbort = null;
     if (hls) hls.destroy();
     hls = null;
+    if (shakaPlayer) shakaPlayer.destroy().catch(() => {});
+    shakaPlayer = null;
   }
 
   function revealControls() {
@@ -217,7 +248,14 @@
     });
     const selectedValue = Number(value);
     const selected = parsedQualities.find((item) => item.index === selectedValue);
-    if (hls) {
+    if (shakaPlayer) {
+      if (selectedValue === -1) {
+        shakaPlayer.configure("abr.enabled", true);
+      } else if (selected?.shakaTrack) {
+        shakaPlayer.configure("abr.enabled", false);
+        shakaPlayer.selectVariantTrack(selected.shakaTrack, true, 3);
+      }
+    } else if (hls) {
       if (selectedValue === -1) {
         if (forcedVariant) {
           forcedVariant = false;
@@ -283,19 +321,122 @@
     });
   }
 
+  function readDashQualities() {
+    if (!shakaPlayer) return [];
+    const tracks = shakaPlayer.getVariantTracks();
+    const active = tracks.find((track) => track.active);
+    const preferredTracks = active
+      ? tracks.filter((track) => track.language === active.language && track.channelsCount === active.channelsCount)
+      : tracks;
+    const seen = new Set();
+    return preferredTracks
+      .filter((track) => track.height && track.bandwidth)
+      .filter((track) => {
+        const identity = track.videoId != null
+          ? `video:${track.videoId}`
+          : `${track.height}:${track.videoBandwidth || track.bandwidth}:${track.frameRate || 0}`;
+        if (seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      })
+      .map((track) => ({
+        index: track.id,
+        width: track.width || 0,
+        height: track.height || 0,
+        bandwidth: track.videoBandwidth || track.bandwidth || 0,
+        frameRate: track.frameRate || 0,
+        shakaTrack: track
+      }));
+  }
+
+  async function loadDash(source, clearKeys, autoplay) {
+    if (!window.shaka) {
+      setMode("error", "DASH 播放组件未加载，请刷新页面后重试");
+      return;
+    }
+    shaka.polyfill.installAll();
+    if (!shaka.Player.isBrowserSupported()) {
+      setMode("error", "当前浏览器不支持 DASH / MSE / EME，请更换新版浏览器");
+      return;
+    }
+
+    const playerInstance = new shaka.Player();
+    shakaPlayer = playerInstance;
+    playerInstance.addEventListener("error", (event) => {
+      const detail = event.detail || {};
+      setMode("error", `DASH 播放失败：${detail.code || "未知错误"}`);
+    });
+    playerInstance.addEventListener("trackschanged", () => {
+      if (shakaPlayer !== playerInstance) return;
+      parsedQualities = normalizeQualities(readDashQualities());
+      fillQualities(parsedQualities);
+    });
+    playerInstance.addEventListener("adaptation", () => {
+      if (shakaPlayer !== playerInstance || playerInstance.getConfiguration().abr.enabled) return;
+      const active = playerInstance.getVariantTracks().find((track) => track.active);
+      if (!active) return;
+      qualityValue = String(active.id);
+      const item = qualityMenu.querySelector(`[data-value="${active.id}"]`);
+      if (item) qualityTrigger.firstChild.textContent = item.querySelector("span").textContent;
+    });
+
+    try {
+      await playerInstance.attach(video);
+      playerInstance.configure({
+        drm: { clearKeys },
+        abr: { enabled:true },
+        streaming: {
+          lowLatencyMode:true,
+          bufferingGoal:30,
+          rebufferingGoal:2,
+          retryParameters:{ maxAttempts:5, baseDelay:600, backoffFactor:2, fuzzFactor:.5, timeout:0, stallTimeout:5000, connectionTimeout:10000 }
+        },
+        manifest: {
+          retryParameters:{ maxAttempts:4, baseDelay:600, backoffFactor:2, fuzzFactor:.5, timeout:0, stallTimeout:5000, connectionTimeout:10000 }
+        }
+      });
+      await playerInstance.load(source);
+      if (shakaPlayer !== playerInstance) return;
+      parsedQualities = normalizeQualities(readDashQualities());
+      fillQualities(parsedQualities);
+      setMode(playerInstance.isLive() ? "live" : "vod");
+      tryPlay(autoplay);
+    } catch (error) {
+      if (shakaPlayer !== playerInstance) return;
+      const code = error && error.code ? `（${error.code}）` : "";
+      setMode("error", `无法加载 MPD${code}：请检查地址、ClearKey、CORS 和浏览器 DRM 支持`);
+    }
+  }
+
   function load(source, autoplay = true) {
     const clean = source.trim();
     if (!clean) return;
+
+    const nextSourceKind = isDashUrl(clean) ? "dash" : "hls";
+    let clearKeys = {};
+    if (nextSourceKind === "dash") {
+      try {
+        clearKeys = parseClearKeys(clearKeyInput.value);
+      } catch (error) {
+        setMode("error", error.message);
+        return;
+      }
+    }
 
     destroy();
     video.pause();
     video.removeAttribute("src");
     video.load();
     activeUrl = clean;
+    sourceKind = nextSourceKind;
     masterUrl = clean;
     parsedQualities = [];
     forcedVariant = false;
     input.value = clean;
+    if (!refererInput.value.trim() || refererInput.dataset.manual !== "1") {
+      refererInput.value = clean;
+      refererInput.dataset.manual = "0";
+    }
     $("share").disabled = false;
     customControls.hidden = false;
     centerPlay.hidden = true;
@@ -304,6 +445,11 @@
     fillQualities([]);
     setMode("loading", "正在读取播放列表…");
     revealControls();
+
+    if (sourceKind === "dash") {
+      loadDash(clean, clearKeys, autoplay);
+      return;
+    }
 
     manifestAbort = new AbortController();
     fetch(clean, { cache:"no-store", signal:manifestAbort.signal })
@@ -399,7 +545,10 @@
   }
 
   function goLive() {
-    if (hls && hls.liveSyncPosition != null) {
+    if (shakaPlayer) {
+      const range = shakaPlayer.seekRange();
+      video.currentTime = range.end;
+    } else if (hls && hls.liveSyncPosition != null) {
       video.currentTime = hls.liveSyncPosition;
     } else if (video.seekable.length) {
       video.currentTime = video.seekable.end(video.seekable.length - 1);
@@ -434,6 +583,14 @@
   $("source-form").addEventListener("submit", (event) => {
     event.preventDefault();
     load(input.value, true);
+  });
+  input.addEventListener("input", () => {
+    if (refererInput.dataset.manual !== "1") refererInput.value = input.value;
+  });
+  refererInput.addEventListener("input", () => {
+    const manual = Boolean(refererInput.value.trim() && refererInput.value.trim() !== input.value.trim());
+    refererInput.dataset.manual = manual ? "1" : "0";
+    if (!manual) refererInput.value = input.value;
   });
   playToggle.addEventListener("click", togglePlay);
   centerPlay.addEventListener("click", togglePlay);
@@ -505,7 +662,7 @@
   });
 
   window.addEventListener("keydown", (event) => {
-    if (["INPUT","SELECT"].includes(event.target.tagName) || !activeUrl) return;
+    if (["INPUT","SELECT","TEXTAREA"].includes(event.target.tagName) || !activeUrl) return;
     if (event.code === "Space") {
       event.preventDefault();
       togglePlay();
@@ -528,8 +685,10 @@
     $("buffer").textContent = ranges.length
       ? `${Math.max(0, ranges.end(ranges.length - 1) - video.currentTime).toFixed(1)} s`
       : "—";
-    $("bandwidth").textContent = formatRate(hls ? hls.bandwidthEstimate : 0);
-    $("latency").textContent = hls && Number.isFinite(hls.latency) ? `${hls.latency.toFixed(1)} s` : "—";
+    const shakaStats = shakaPlayer ? shakaPlayer.getStats() : null;
+    $("bandwidth").textContent = formatRate(shakaStats?.estimatedBandwidth || (hls ? hls.bandwidthEstimate : 0));
+    const measuredLatency = shakaStats && Number.isFinite(shakaStats.liveLatency) ? shakaStats.liveLatency : hls && Number.isFinite(hls.latency) ? hls.latency : null;
+    $("latency").textContent = measuredLatency != null ? `${measuredLatency.toFixed(1)} s` : "—";
   }, 1000);
 
   window.addEventListener("beforeunload", destroy);

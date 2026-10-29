@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#090b10">
   <title>STREAMBOX</title>
-  <meta name="description" content="适用于电脑、平板和手机的 HLS 直播与点播播放器">
-  <link rel="stylesheet" href="style.css?v=6">
+  <meta name="description" content="适用于电脑、平板和手机的 HLS / DASH 直播与点播播放器">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <main class="page" id="page">
@@ -17,18 +17,29 @@
 
     <section class="source-panel">
       <form id="source-form">
-        <label for="stream-url">M3U8 播放地址</label>
+        <label for="stream-url">M3U8 / MPD 播放地址</label>
         <div class="url-row">
-          <input id="stream-url" type="url" inputmode="url" placeholder="https://example.com/live/master.m3u8" autocapitalize="none" autocomplete="off" spellcheck="false" required>
+          <input id="stream-url" type="url" inputmode="url" placeholder="https://example.com/live/master.m3u8 或 manifest.mpd" autocapitalize="none" autocomplete="off" spellcheck="false" required>
           <button class="primary" type="submit">加载播放</button>
           <button class="secondary" id="share" type="button" disabled>复制分享链接</button>
         </div>
+        <div class="option-grid">
+          <label class="option-field" for="clear-key">
+            <span>ClearKey（KID:KEY，可填写多组）</span>
+            <textarea id="clear-key" rows="1" placeholder="557c450f28b34919b52271b12344ae68:abcf3f82060903871524dc7f8359f678" autocapitalize="none" autocomplete="off" spellcheck="false"></textarea>
+          </label>
+          <label class="option-field" for="referer">
+            <span>Referer（留空时默认与播放地址相同）</span>
+            <input id="referer" type="url" inputmode="url" placeholder="自动使用播放地址" autocapitalize="none" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+        <p class="source-note">MPD ClearKey 仅保存在当前页面内存中；标准 Referer 由浏览器控制，纯静态 GitHub Pages 无法伪造跨站 Referer。</p>
       </form>
     </section>
 
     <section class="player-shell controls-visible" id="player-shell">
       <div class="video-wrap">
-        <video id="video" playsinline preload="metadata" aria-label="HLS 视频播放器"></video>
+        <video id="video" playsinline preload="metadata" aria-label="HLS / DASH 视频播放器"></video>
         <div class="loading-spinner" id="loading" aria-label="正在加载" hidden></div>
         <button class="center-play" id="center-play" type="button" aria-label="播放" hidden>▶</button>
         <div class="error-overlay" id="error" hidden></div>
@@ -76,7 +87,8 @@
       <p>提示：视频服务器必须允许跨域访问；HTTPS 页面不能加载 HTTP 视频源。</p>
     </footer>
   </main>
-  <script src="vendor/hls.min.js?v=6"></script>
-  <script src="app.js?v=6"></script>
+  <script src="vendor/hls.min.js?v=7"></script>
+  <script src="vendor/shaka-player.compiled.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>
